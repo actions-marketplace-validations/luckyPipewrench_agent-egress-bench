@@ -322,6 +322,27 @@ def corpus(repo: Path, version: str) -> dict[str, Any]:
     return {"version": version, "manifest_path": "cases/MANIFEST.txt", "manifest_sha256": sha256_bytes(raw), "case_count": len(ids)}
 
 
+def require_changelog_section(repo: Path, version: str) -> None:
+    """Refuse to build a final release whose version has no dated CHANGELOG section.
+
+    Pre-release versions are exempt. Only the build path calls this: verifying an
+    already published release must not start failing because an older tag
+    predates the rule.
+    """
+    # Build metadata (after "+") does not make a version a pre-release, and the
+    # changelog names the release by its core version.
+    core = version.partition("+")[0]
+    if "-" in core:
+        return
+    heading = re.compile(rf"^## \[{re.escape(core)}\] - \d{{4}}-\d{{2}}-\d{{2}}[ \t]*$", re.MULTILINE)
+    try:
+        changelog = (repo / "CHANGELOG.md").read_text(encoding="utf-8")
+    except OSError as exc:
+        fail(f"CHANGELOG.md is unreadable: {exc}")
+    if not heading.search(changelog):
+        fail(f"CHANGELOG.md has no dated section for {core}; add '## [{core}] - YYYY-MM-DD' before tagging")
+
+
 def build_identity(repo: Path, tag: str, version: str, commit: str, snapshot: bool) -> dict[str, Any]:
     if snapshot:
         if tag != "snapshot" or not SNAPSHOT_VERSION_RE.fullmatch(version):
@@ -1164,6 +1185,8 @@ def main() -> int:
     args = parser.parse_args()
     try:
         if args.command == "prepare":
+            if not args.snapshot:
+                require_changelog_section(args.repo_root.resolve(), args.version)
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_bytes(canonical_json(build_identity(args.repo_root.resolve(), args.tag, args.version, args.commit, args.snapshot)))
         elif args.command == "snapshot-version":
