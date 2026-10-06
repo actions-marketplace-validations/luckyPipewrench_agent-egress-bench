@@ -127,8 +127,17 @@ dns:
       - 127.0.0.1
     # Fetch-only package registry stand-in for the allowlisted-helper write cases.
     # Resolves to loopback like the other allowed-channel hosts; trusted_domains
-    # exempts only SSRF on the hostname, never DLP, entropy, or method policy.
+    # exempts ordinary private-IP SSRF and opaque body/frame content entropy.
+    # URL/path/query entropy, DLP, method policy, and the non-overridable
+    # metadata/address floor still apply.
     allowed-package-registry.test:
+      - 127.0.0.1
+    # Allowlisted package-mirror stand-in shared by the WebDAV collection-path
+    # attack, the nested-target relay attack and the mirror package-fetch
+    # false-positive control. The runner keeps this hostname and swaps only the
+    # port to its local TLS fixture, so without this override the lookup fails
+    # in public DNS and the case is refused before any detector sees it.
+    mirror.fixture.example.com:
       - 127.0.0.1
     # Resolve the benign agent-card hostnames to a public IP so private-IP SSRF
     # checks evaluate them (public -> allowed) instead of failing closed on an
@@ -142,6 +151,9 @@ trusted_domains:
   - allowed-code-api.test
   - allowed-chat-webhook.test
   - allowed-package-registry.test
+  # The mirror cases carry no opaque body or frame payload; hostname trust does
+  # not exempt their URL/path/query entropy or nested-target SSRF checks.
+  - mirror.fixture.example.com
 
 dlp:
   patterns:
@@ -198,12 +210,12 @@ dlp:
 # This is operator intent about one host, not a scanner heuristic, which is why
 # it lives here rather than in a detector default.
 #
-# The list names only methods request_policy validates today. It is a deny list,
-# not a fetch-only allow list: request_policy is allow-by-default and has no
-# allow-only method predicate, so a method absent here still reaches the host.
-# That is sufficient for the corpus, whose write case uses PUT, and it keeps this
-# fixture loadable by any published Pipelock rather than binding the benchmark to
-# an unreleased validator.
+# The list names only methods every published Pipelock validates. Pipelock 3.6.0
+# and later also accept WebDAV methods such as MKCOL here; 3.5.0 rejects them, so
+# naming them would stop this fixture loading on a published release. It is a
+# deny list, not a fetch-only allow list: request_policy is allow-by-default and
+# has no allow-only method predicate, so a method absent here still reaches the
+# host. That is sufficient for the corpus's PUT write case.
 request_policy:
   enabled: true
   rules:
